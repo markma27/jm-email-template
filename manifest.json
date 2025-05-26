@@ -5,12 +5,13 @@
   "description": "Launch Outlook emails with templates from SharePoint Online",
   "permissions": [
     "activeTab",
-    "storage"
+    "storage",
+    "cookies"
   ],
   "host_permissions": [
-    "https://jaquillardminns.sharepoint.com/*",
-    "https://outlook.office.com/*",
-    "https://login.microsoftonline.com/*"
+    "https://*.sharepoint.com/*",
+    "https://*.outlook.com/*",
+    "https://*.microsoftonline.com/*"
   ],
   "action": {
     "default_popup": "popup.html",

@@ -2,12 +2,14 @@
 const SHAREPOINT_CONFIG = {
     siteUrl: 'https://jaquillardminns.sharepoint.com/sites/JaquillardMinns411',
     listTitle: 'JM Email Template Library',
-    apiUrl: 'https://jaquillardminns.sharepoint.com/sites/JaquillardMinns411/_api/web/lists/getbytitle(\'JM%20Email%20Template%20Library\')/items'
+    get apiUrl() {
+        // Use GetByTitle and encode the list name properly
+        return `${this.siteUrl}/_api/web/lists/GetByTitle('${encodeURIComponent(this.listTitle)}')/items`;
+    }
 };
 
 // Global variables
 let templates = [];
-let filteredTemplates = [];
 let selectedTemplate = null;
 
 // DOM elements
@@ -17,7 +19,6 @@ const elements = {
     errorMessage: document.getElementById('errorMessage'),
     mainContent: document.getElementById('mainContent'),
     templateSelect: document.getElementById('templateSelect'),
-    categoryFilter: document.getElementById('categoryFilter'),
     previewPane: document.getElementById('previewPane'),
     launchBtn: document.getElementById('launchBtn'),
     refreshBtn: document.getElementById('refreshBtn'),
@@ -33,10 +34,61 @@ document.addEventListener('DOMContentLoaded', async () => {
 // Event listeners
 function setupEventListeners() {
     elements.templateSelect.addEventListener('change', handleTemplateSelection);
-    elements.categoryFilter.addEventListener('change', handleCategoryFilter);
     elements.launchBtn.addEventListener('click', handleLaunchEmail);
     elements.refreshBtn.addEventListener('click', handleRefresh);
     elements.retryBtn.addEventListener('click', handleRetry);
+}
+
+// Check SharePoint authentication
+async function checkSharePointAuth() {
+    try {
+        const response = await fetch(`${SHAREPOINT_CONFIG.siteUrl}/_api/web`, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json;odata=verbose'
+            },
+            credentials: 'include'
+        });
+
+        if (!response.ok) {
+            // If not authenticated, open SharePoint in a new tab
+            window.open(SHAREPOINT_CONFIG.siteUrl, '_blank');
+            throw new Error('Please sign in to SharePoint and try again.');
+        }
+
+        return true;
+    } catch (error) {
+        console.error('Auth check error:', error);
+        throw new Error('Authentication required. Please sign in to SharePoint and try again.');
+    }
+}
+
+// Get list fields to verify column names
+async function getListFields() {
+    try {
+        const response = await fetch(`${SHAREPOINT_CONFIG.apiUrl}/fields`, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json;odata=verbose'
+            },
+            credentials: 'include'
+        });
+
+        if (!response.ok) {
+            throw new Error(`Failed to get list fields: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log('Available fields:', data.d.results.map(f => ({
+            title: f.Title,
+            internalName: f.InternalName,
+            staticName: f.StaticName
+        })));
+        return data.d.results;
+    } catch (error) {
+        console.error('Error getting fields:', error);
+        throw error;
+    }
 }
 
 // Load templates from SharePoint
@@ -44,30 +96,61 @@ async function loadTemplates() {
     showLoading();
     
     try {
-        const response = await fetch(SHAREPOINT_CONFIG.apiUrl + '?$select=Id,Title,Email_x0020_Category,Email_x0020_Body&$orderby=Title', {
+        // First try to verify the list exists and log debug info
+        console.log('Attempting to access SharePoint site:', SHAREPOINT_CONFIG.siteUrl);
+        
+        const listInfoUrl = `${SHAREPOINT_CONFIG.siteUrl}/_api/web/lists/GetByTitle('${encodeURIComponent(SHAREPOINT_CONFIG.listTitle)}')?$select=Title,ItemCount`;
+        console.log('Checking list URL:', listInfoUrl);
+
+        const listResponse = await fetch(listInfoUrl, {
             method: 'GET',
             headers: {
-                'Accept': 'application/json;odata=verbose',
-                'Content-Type': 'application/json;odata=verbose'
+                'Accept': 'application/json;odata=verbose'
+            },
+            credentials: 'include'
+        });
+
+        if (!listResponse.ok) {
+            console.error('List check failed:', listResponse.status, listResponse.statusText);
+            const errorText = await listResponse.text();
+            console.error('Error details:', errorText);
+            throw new Error(`Failed to verify list: ${listResponse.status}`);
+        }
+
+        const listInfo = await listResponse.json();
+        console.log('List info:', listInfo);
+
+        // Now fetch the items
+        const itemsUrl = `${SHAREPOINT_CONFIG.apiUrl}?$select=ID,Title,EmailCategory,EmailTitle,EmailBody&$orderby=Title`;
+        console.log('Fetching items URL:', itemsUrl);
+
+        const response = await fetch(itemsUrl, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json;odata=verbose'
             },
             credentials: 'include'
         });
 
         if (!response.ok) {
+            console.error('Items fetch failed:', response.status, response.statusText);
+            const errorText = await response.text();
+            console.error('Error details:', errorText);
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
 
         const data = await response.json();
+        console.log('SharePoint response:', data);
         
         if (data.d && data.d.results) {
             templates = data.d.results.map(item => ({
-                id: item.Id,
+                id: item.ID || item.Id,
                 title: item.Title || 'Untitled Template',
-                category: item.Email_x0020_Category || 'Uncategorized',
-                body: item.Email_x0020_Body || ''
+                emailTitle: item.EmailTitle || item.Title || 'Untitled Template',
+                category: item.EmailCategory || 'Uncategorized',
+                body: item.EmailBody || ''
             }));
             
-            filteredTemplates = [...templates];
             populateUI();
             showMainContent();
         } else {
@@ -85,8 +168,10 @@ function getErrorMessage(error) {
         return 'Authentication required. Please sign in to SharePoint and try again.';
     } else if (error.message.includes('403')) {
         return 'Access denied. You may not have permission to access this SharePoint list.';
-    } else if (error.message.includes('404')) {
+    } else if (error.message.includes('404') || error.message.includes('List not found')) {
         return 'SharePoint list not found. Please check the list name and URL.';
+    } else if (error.message.includes('400')) {
+        return 'Bad request. Please check SharePoint configuration and try again.';
     } else if (error.message.includes('Failed to fetch')) {
         return 'Network error. Please check your internet connection and try again.';
     } else {
@@ -94,35 +179,20 @@ function getErrorMessage(error) {
     }
 }
 
-// Populate UI with templates and categories
+// Populate UI with templates
 function populateUI() {
     populateTemplateSelect();
-    populateCategoryFilter();
 }
 
 // Populate template dropdown
 function populateTemplateSelect() {
     elements.templateSelect.innerHTML = '<option value="">Choose a template...</option>';
     
-    filteredTemplates.forEach(template => {
+    templates.forEach(template => {
         const option = document.createElement('option');
         option.value = template.id;
-        option.textContent = `${template.title} (${template.category})`;
+        option.textContent = template.title;
         elements.templateSelect.appendChild(option);
-    });
-}
-
-// Populate category filter
-function populateCategoryFilter() {
-    const categories = [...new Set(templates.map(t => t.category))].sort();
-    
-    elements.categoryFilter.innerHTML = '<option value="">All Categories</option>';
-    
-    categories.forEach(category => {
-        const option = document.createElement('option');
-        option.value = category;
-        option.textContent = category;
-        elements.categoryFilter.appendChild(option);
     });
 }
 
@@ -141,24 +211,6 @@ function handleTemplateSelection(event) {
         showPlaceholder();
         elements.launchBtn.disabled = true;
     }
-}
-
-// Handle category filter
-function handleCategoryFilter(event) {
-    const selectedCategory = event.target.value;
-    
-    if (selectedCategory) {
-        filteredTemplates = templates.filter(t => t.category === selectedCategory);
-    } else {
-        filteredTemplates = [...templates];
-    }
-    
-    populateTemplateSelect();
-    
-    // Reset selection
-    selectedTemplate = null;
-    showPlaceholder();
-    elements.launchBtn.disabled = true;
 }
 
 // Show template preview
@@ -200,6 +252,51 @@ function sanitizeHtml(html) {
     return temp.innerHTML;
 }
 
+// Convert HTML to formatted plain text for email body
+function htmlToFormattedText(html) {
+    // Create a temporary div to parse HTML
+    const temp = document.createElement('div');
+    temp.innerHTML = html;
+    
+    // Replace HTML formatting with text equivalents that work in plain text emails
+    // Handle bold text
+    temp.innerHTML = temp.innerHTML.replace(/<b[^>]*>(.*?)<\/b>/gi, '*$1*');
+    temp.innerHTML = temp.innerHTML.replace(/<strong[^>]*>(.*?)<\/strong>/gi, '*$1*');
+    
+    // Handle italic text
+    temp.innerHTML = temp.innerHTML.replace(/<i[^>]*>(.*?)<\/i>/gi, '_$1_');
+    temp.innerHTML = temp.innerHTML.replace(/<em[^>]*>(.*?)<\/em>/gi, '_$1_');
+    
+    // Handle underline
+    temp.innerHTML = temp.innerHTML.replace(/<u[^>]*>(.*?)<\/u>/gi, '_$1_');
+    
+    // Handle line breaks and paragraphs
+    temp.innerHTML = temp.innerHTML.replace(/<br\s*\/?>/gi, '\n');
+    temp.innerHTML = temp.innerHTML.replace(/<\/p>/gi, '\n\n');
+    temp.innerHTML = temp.innerHTML.replace(/<p[^>]*>/gi, '');
+    
+    // Handle lists
+    temp.innerHTML = temp.innerHTML.replace(/<\/li>/gi, '\n');
+    temp.innerHTML = temp.innerHTML.replace(/<li[^>]*>/gi, '• ');
+    temp.innerHTML = temp.innerHTML.replace(/<\/?[uo]l[^>]*>/gi, '\n');
+    
+    // Handle divs
+    temp.innerHTML = temp.innerHTML.replace(/<\/div>/gi, '\n');
+    temp.innerHTML = temp.innerHTML.replace(/<div[^>]*>/gi, '');
+    
+    // Handle headings
+    temp.innerHTML = temp.innerHTML.replace(/<h[1-6][^>]*>(.*?)<\/h[1-6]>/gi, '\n$1\n');
+    
+    // Get the text content and clean up
+    let formattedText = temp.textContent || temp.innerText || '';
+    
+    // Clean up extra whitespace and line breaks
+    formattedText = formattedText.replace(/\n\s*\n\s*\n/g, '\n\n'); // Remove triple+ line breaks
+    formattedText = formattedText.replace(/^\s+|\s+$/g, ''); // Trim
+    
+    return formattedText;
+}
+
 // Handle email launch
 async function handleLaunchEmail() {
     if (!selectedTemplate) {
@@ -209,29 +306,86 @@ async function handleLaunchEmail() {
     
     try {
         // Prepare email content
-        const emailBody = encodeURIComponent(selectedTemplate.body);
-        const subject = encodeURIComponent(selectedTemplate.title);
+        const subject = selectedTemplate.emailTitle || selectedTemplate.title;
+        const htmlBody = selectedTemplate.body;
         
-        // Try Outlook Web first
-        const outlookUrl = `https://outlook.office.com/mail/deeplink/compose?subject=${subject}&body=${emailBody}`;
+        // Try different approaches for launching Outlook with HTML content
         
-        // Open in new tab
-        const newTab = window.open(outlookUrl, '_blank');
+        // Method 1: Try using Outlook Web App (which handles HTML better)
+        const outlookWebUrl = `https://outlook.office.com/mail/deeplink/compose?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(htmlBody)}`;
         
-        // Fallback to mailto if Outlook Web fails
-        if (!newTab) {
-            const mailtoUrl = `mailto:?subject=${subject}&body=${emailBody}`;
-            window.location.href = mailtoUrl;
-        }
+        // Method 2: Try desktop Outlook with different protocol format
+        const outlookDesktopUrl = `ms-outlook://compose?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(htmlBody)}`;
         
-        // Close the popup after a short delay
+        // Method 3: Create a data URL with HTML content
+        const htmlEmail = `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Email Template</title>
+</head>
+<body>
+    <div style="font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6;">
+        ${htmlBody}
+    </div>
+</body>
+</html>`;
+        
+        // Try to open Outlook Web first (better HTML support)
+        const webLink = document.createElement('a');
+        webLink.href = outlookWebUrl;
+        webLink.target = '_blank';
+        webLink.style.display = 'none';
+        document.body.appendChild(webLink);
+        webLink.click();
+        document.body.removeChild(webLink);
+        
+        // Also try desktop Outlook as backup
         setTimeout(() => {
-            window.close();
+            const desktopLink = document.createElement('a');
+            desktopLink.href = outlookDesktopUrl;
+            desktopLink.style.display = 'none';
+            document.body.appendChild(desktopLink);
+            desktopLink.click();
+            document.body.removeChild(desktopLink);
         }, 500);
+        
+        // Show success message
+        const originalText = elements.launchBtn.textContent;
+        elements.launchBtn.textContent = 'Email Launched!';
+        elements.launchBtn.style.backgroundColor = '#107c10';
+        
+        setTimeout(() => {
+            elements.launchBtn.textContent = originalText;
+            elements.launchBtn.style.backgroundColor = '#0078d4';
+        }, 2000);
         
     } catch (error) {
         console.error('Error launching email:', error);
-        alert('Failed to launch email. Please try again.');
+        
+        // Fallback to copying HTML content to clipboard
+        try {
+            const subject = selectedTemplate.emailTitle || selectedTemplate.title;
+            const htmlBody = selectedTemplate.body;
+            
+            // Create a formatted email template for copying
+            const emailTemplate = `Subject: ${subject}
+
+HTML Content (paste this into Outlook using Ctrl+Shift+V for rich formatting):
+${htmlBody}
+
+Instructions:
+1. Copy the HTML content above
+2. Open Outlook and create a new email
+3. Paste using Ctrl+Shift+V to preserve formatting
+4. Or switch to HTML view in Outlook and paste the HTML directly`;
+
+            await navigator.clipboard.writeText(emailTemplate);
+            alert('Email content copied to clipboard with HTML formatting instructions. Please follow the instructions in the clipboard content to preserve formatting in Outlook.');
+        } catch (clipboardError) {
+            alert('Failed to launch Outlook. Please manually copy the email content from the preview pane.');
+        }
     }
 }
 
