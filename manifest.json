@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "JM Email Template Launcher",
+  "version": "1.0",
+  "description": "Launch Outlook emails with templates from SharePoint Online",
+  "permissions": [
+    "activeTab",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://jaquillardminns.sharepoint.com/*",
+    "https://outlook.office.com/*",
+    "https://login.microsoftonline.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "JM Email Templates",
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
+} 

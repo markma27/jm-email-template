@@ -1,0 +1,12 @@
+{
+  "name": "jm-email-template-launcher",
+  "version": "1.0.0",
+  "description": "Chrome extension for launching Outlook emails with SharePoint templates",
+  "private": true,
+  "scripts": {
+    "generate-icons": "node generate_icons.js"
+  },
+  "dependencies": {
+    "canvas": "^2.11.2"
+  }
+} 

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JM Email Templates</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>JM Email Templates</h1>
+            <button id="refreshBtn" class="refresh-btn" title="Refresh Templates">
+                <span>🔄</span>
+            </button>
+        </header>
+        
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Loading templates...</p>
+        </div>
+        
+        <div class="error" id="error" style="display: none;">
+            <p id="errorMessage"></p>
+            <button id="retryBtn" class="retry-btn">Retry</button>
+        </div>
+        
+        <div class="main-content" id="mainContent" style="display: none;">
+            <div class="template-selector">
+                <label for="templateSelect">Select Template:</label>
+                <select id="templateSelect">
+                    <option value="">Choose a template...</option>
+                </select>
+            </div>
+            
+            <div class="filter-section">
+                <label for="categoryFilter">Filter by Category:</label>
+                <select id="categoryFilter">
+                    <option value="">All Categories</option>
+                </select>
+            </div>
+            
+            <div class="preview-section">
+                <h3>Preview:</h3>
+                <div id="previewPane" class="preview-pane">
+                    <p class="placeholder">Select a template to see preview</p>
+                </div>
+            </div>
+            
+            <div class="actions">
+                <button id="launchBtn" class="launch-btn" disabled>
+                    Launch Outlook Email
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <script src="popup.js"></script>
+</body>
+</html> 
