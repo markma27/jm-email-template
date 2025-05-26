@@ -32,18 +32,29 @@
                 </select>
             </div>
             
+            <div class="email-title-section" id="emailTitleSection" style="display: none;">
+                <div class="section-header">
+                    <label for="emailTitle">Email Title:</label>
+                    <button id="copyTitleBtn" class="copy-section-btn" disabled title="Copy email title to clipboard">
+                        Copy Title
+                    </button>
+                </div>
+                <div id="emailTitle" class="email-title-display"></div>
+            </div>
+            
             <div class="preview-section">
-                <h3>Preview:</h3>
+                <div class="section-header">
+                    <h3>Preview:</h3>
+                    <button id="copyBodyBtn" class="copy-section-btn" disabled title="Copy formatted email body to clipboard">
+                        Copy Body
+                    </button>
+                </div>
                 <div id="previewPane" class="preview-pane">
                     <p class="placeholder">Select a template to see preview</p>
                 </div>
             </div>
             
-            <div class="actions">
-                <button id="launchBtn" class="launch-btn" disabled>
-                    Launch Outlook Email
-                </button>
-            </div>
+
         </div>
     </div>
     

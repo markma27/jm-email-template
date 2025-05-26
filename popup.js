@@ -19,8 +19,11 @@ const elements = {
     errorMessage: document.getElementById('errorMessage'),
     mainContent: document.getElementById('mainContent'),
     templateSelect: document.getElementById('templateSelect'),
+    emailTitleSection: document.getElementById('emailTitleSection'),
+    emailTitle: document.getElementById('emailTitle'),
     previewPane: document.getElementById('previewPane'),
-    launchBtn: document.getElementById('launchBtn'),
+    copyTitleBtn: document.getElementById('copyTitleBtn'),
+    copyBodyBtn: document.getElementById('copyBodyBtn'),
     refreshBtn: document.getElementById('refreshBtn'),
     retryBtn: document.getElementById('retryBtn')
 };
@@ -34,7 +37,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 // Event listeners
 function setupEventListeners() {
     elements.templateSelect.addEventListener('change', handleTemplateSelection);
-    elements.launchBtn.addEventListener('click', handleLaunchEmail);
+    elements.copyTitleBtn.addEventListener('click', handleCopyTitle);
+    elements.copyBodyBtn.addEventListener('click', handleCopyBody);
     elements.refreshBtn.addEventListener('click', handleRefresh);
     elements.retryBtn.addEventListener('click', handleRetry);
 }
@@ -203,13 +207,17 @@ function handleTemplateSelection(event) {
     if (templateId) {
         selectedTemplate = templates.find(t => t.id == templateId);
         if (selectedTemplate) {
+            showEmailTitle(selectedTemplate.emailTitle || selectedTemplate.title);
             showPreview(selectedTemplate.body);
-            elements.launchBtn.disabled = false;
+            elements.copyTitleBtn.disabled = false;
+            elements.copyBodyBtn.disabled = false;
         }
     } else {
         selectedTemplate = null;
+        hideEmailTitle();
         showPlaceholder();
-        elements.launchBtn.disabled = true;
+        elements.copyTitleBtn.disabled = true;
+        elements.copyBodyBtn.disabled = true;
     }
 }
 
@@ -226,6 +234,18 @@ function showPreview(htmlContent) {
 // Show placeholder in preview
 function showPlaceholder() {
     elements.previewPane.innerHTML = '<p class="placeholder">Select a template to see preview</p>';
+}
+
+// Show email title
+function showEmailTitle(title) {
+    elements.emailTitle.textContent = title || 'No title available';
+    elements.emailTitleSection.style.display = 'block';
+}
+
+// Hide email title
+function hideEmailTitle() {
+    elements.emailTitle.textContent = '';
+    elements.emailTitleSection.style.display = 'none';
 }
 
 // Basic HTML sanitization (remove script tags and dangerous attributes)
@@ -252,139 +272,181 @@ function sanitizeHtml(html) {
     return temp.innerHTML;
 }
 
-// Convert HTML to formatted plain text for email body
+// Convert HTML to formatted plain text for email body (legacy function - kept for compatibility)
 function htmlToFormattedText(html) {
+    return convertHtmlToFormattedPlainText(html);
+}
+
+// Convert HTML to formatted plain text with bold markers and proper paragraph spacing
+function convertHtmlToFormattedPlainText(html) {
+    console.log('Original HTML:', html); // Debug log
+    
     // Create a temporary div to parse HTML
     const temp = document.createElement('div');
     temp.innerHTML = html;
     
-    // Replace HTML formatting with text equivalents that work in plain text emails
-    // Handle bold text
-    temp.innerHTML = temp.innerHTML.replace(/<b[^>]*>(.*?)<\/b>/gi, '*$1*');
-    temp.innerHTML = temp.innerHTML.replace(/<strong[^>]*>(.*?)<\/strong>/gi, '*$1*');
+    // First, handle nested formatting by processing the DOM elements directly
+    const processElement = (element) => {
+        if (element.nodeType === Node.TEXT_NODE) {
+            return element.textContent;
+        }
+        
+        if (element.nodeType === Node.ELEMENT_NODE) {
+            let content = '';
+            for (let child of element.childNodes) {
+                content += processElement(child);
+            }
+            
+            const tagName = element.tagName.toLowerCase();
+            
+                         // Apply formatting based on tag
+             switch (tagName) {
+                 case 'b':
+                 case 'strong':
+                     return `**${content}**`;
+                 case 'i':
+                 case 'em':
+                     return `*${content}*`;
+                 case 'u':
+                     return `_${content}_`;
+                 case 'p':
+                     // For "No Spacing" style: content + line break + blank line
+                     return content.trim() + '\n\n';
+                 case 'div':
+                     // Treat divs like paragraphs for consistent spacing
+                     return content.trim() + '\n\n';
+                 case 'br':
+                     // Single line break
+                     return '\n';
+                 case 'li':
+                     return '• ' + content.trim() + '\n';
+                 case 'ul':
+                 case 'ol':
+                     return '\n' + content + '\n';
+                 case 'h1':
+                 case 'h2':
+                 case 'h3':
+                 case 'h4':
+                 case 'h5':
+                 case 'h6':
+                     return `\n**${content.trim()}**\n\n`;
+                 default:
+                     return content;
+             }
+        }
+        
+        return '';
+    };
     
-    // Handle italic text
-    temp.innerHTML = temp.innerHTML.replace(/<i[^>]*>(.*?)<\/i>/gi, '_$1_');
-    temp.innerHTML = temp.innerHTML.replace(/<em[^>]*>(.*?)<\/em>/gi, '_$1_');
+    // Process the HTML structure
+    let formattedText = '';
+    for (let child of temp.childNodes) {
+        formattedText += processElement(child);
+    }
     
-    // Handle underline
-    temp.innerHTML = temp.innerHTML.replace(/<u[^>]*>(.*?)<\/u>/gi, '_$1_');
+         // Clean up for "No Spacing" style formatting
+     // Remove any trailing spaces from lines
+     formattedText = formattedText.replace(/[ \t]+\n/g, '\n');
+     // Ensure consistent double line breaks between paragraphs (blank line)
+     formattedText = formattedText.replace(/\n\s*\n\s*\n+/g, '\n\n');
+     // Clean up any spaces at start/end
+     formattedText = formattedText.replace(/^\s+|\s+$/g, '');
+     // Replace multiple spaces/tabs with single space within lines
+     formattedText = formattedText.replace(/[ \t]+/g, ' ');
+     // Ensure we end with proper line breaks if content exists
+     if (formattedText && !formattedText.endsWith('\n\n')) {
+         formattedText = formattedText.replace(/\n*$/, '');
+     }
     
-    // Handle line breaks and paragraphs
-    temp.innerHTML = temp.innerHTML.replace(/<br\s*\/?>/gi, '\n');
-    temp.innerHTML = temp.innerHTML.replace(/<\/p>/gi, '\n\n');
-    temp.innerHTML = temp.innerHTML.replace(/<p[^>]*>/gi, '');
-    
-    // Handle lists
-    temp.innerHTML = temp.innerHTML.replace(/<\/li>/gi, '\n');
-    temp.innerHTML = temp.innerHTML.replace(/<li[^>]*>/gi, '• ');
-    temp.innerHTML = temp.innerHTML.replace(/<\/?[uo]l[^>]*>/gi, '\n');
-    
-    // Handle divs
-    temp.innerHTML = temp.innerHTML.replace(/<\/div>/gi, '\n');
-    temp.innerHTML = temp.innerHTML.replace(/<div[^>]*>/gi, '');
-    
-    // Handle headings
-    temp.innerHTML = temp.innerHTML.replace(/<h[1-6][^>]*>(.*?)<\/h[1-6]>/gi, '\n$1\n');
-    
-    // Get the text content and clean up
-    let formattedText = temp.textContent || temp.innerText || '';
-    
-    // Clean up extra whitespace and line breaks
-    formattedText = formattedText.replace(/\n\s*\n\s*\n/g, '\n\n'); // Remove triple+ line breaks
-    formattedText = formattedText.replace(/^\s+|\s+$/g, ''); // Trim
+    console.log('Formatted text:', formattedText); // Debug log
     
     return formattedText;
 }
 
-// Handle email launch
-async function handleLaunchEmail() {
+// Handle copy title to clipboard
+async function handleCopyTitle() {
     if (!selectedTemplate) {
         alert('Please select a template first.');
         return;
     }
     
     try {
-        // Prepare email content
-        const subject = selectedTemplate.emailTitle || selectedTemplate.title;
-        const htmlBody = selectedTemplate.body;
+        const title = selectedTemplate.emailTitle || selectedTemplate.title;
+        await navigator.clipboard.writeText(title);
         
-        // Try different approaches for launching Outlook with HTML content
-        
-        // Method 1: Try using Outlook Web App (which handles HTML better)
-        const outlookWebUrl = `https://outlook.office.com/mail/deeplink/compose?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(htmlBody)}`;
-        
-        // Method 2: Try desktop Outlook with different protocol format
-        const outlookDesktopUrl = `ms-outlook://compose?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(htmlBody)}`;
-        
-        // Method 3: Create a data URL with HTML content
-        const htmlEmail = `
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Email Template</title>
-</head>
-<body>
-    <div style="font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6;">
-        ${htmlBody}
-    </div>
-</body>
-</html>`;
-        
-        // Try to open Outlook Web first (better HTML support)
-        const webLink = document.createElement('a');
-        webLink.href = outlookWebUrl;
-        webLink.target = '_blank';
-        webLink.style.display = 'none';
-        document.body.appendChild(webLink);
-        webLink.click();
-        document.body.removeChild(webLink);
-        
-        // Also try desktop Outlook as backup
-        setTimeout(() => {
-            const desktopLink = document.createElement('a');
-            desktopLink.href = outlookDesktopUrl;
-            desktopLink.style.display = 'none';
-            document.body.appendChild(desktopLink);
-            desktopLink.click();
-            document.body.removeChild(desktopLink);
-        }, 500);
-        
-        // Show success message
-        const originalText = elements.launchBtn.textContent;
-        elements.launchBtn.textContent = 'Email Launched!';
-        elements.launchBtn.style.backgroundColor = '#107c10';
+        // Show success feedback
+        const originalText = elements.copyTitleBtn.textContent;
+        elements.copyTitleBtn.textContent = 'Copied!';
+        elements.copyTitleBtn.style.backgroundColor = '#107c10';
         
         setTimeout(() => {
-            elements.launchBtn.textContent = originalText;
-            elements.launchBtn.style.backgroundColor = '#0078d4';
+            elements.copyTitleBtn.textContent = originalText;
+            elements.copyTitleBtn.style.backgroundColor = '#0078d4';
         }, 2000);
         
     } catch (error) {
-        console.error('Error launching email:', error);
+        console.error('Error copying title:', error);
+        alert(`Failed to copy title. Please manually copy: "${selectedTemplate.emailTitle || selectedTemplate.title}"`);
+    }
+}
+
+// Handle copy body to clipboard
+async function handleCopyBody() {
+    if (!selectedTemplate) {
+        alert('Please select a template first.');
+        return;
+    }
+    
+    try {
+        // Get the exact HTML content from the preview pane
+        const previewContent = elements.previewPane.innerHTML;
         
-        // Fallback to copying HTML content to clipboard
-        try {
-            const subject = selectedTemplate.emailTitle || selectedTemplate.title;
-            const htmlBody = selectedTemplate.body;
+        // Copy HTML content to clipboard using the Clipboard API
+        if (navigator.clipboard && navigator.clipboard.write) {
+            // Create clipboard items with both HTML and plain text
+            const htmlBlob = new Blob([previewContent], { type: 'text/html' });
+            const textBlob = new Blob([elements.previewPane.textContent || elements.previewPane.innerText], { type: 'text/plain' });
             
-            // Create a formatted email template for copying
-            const emailTemplate = `Subject: ${subject}
-
-HTML Content (paste this into Outlook using Ctrl+Shift+V for rich formatting):
-${htmlBody}
-
-Instructions:
-1. Copy the HTML content above
-2. Open Outlook and create a new email
-3. Paste using Ctrl+Shift+V to preserve formatting
-4. Or switch to HTML view in Outlook and paste the HTML directly`;
-
-            await navigator.clipboard.writeText(emailTemplate);
-            alert('Email content copied to clipboard with HTML formatting instructions. Please follow the instructions in the clipboard content to preserve formatting in Outlook.');
-        } catch (clipboardError) {
-            alert('Failed to launch Outlook. Please manually copy the email content from the preview pane.');
+            const clipboardItem = new ClipboardItem({
+                'text/html': htmlBlob,
+                'text/plain': textBlob
+            });
+            
+            await navigator.clipboard.write([clipboardItem]);
+            
+            // Show success feedback
+            const originalText = elements.copyBodyBtn.textContent;
+            elements.copyBodyBtn.textContent = 'Copied!';
+            elements.copyBodyBtn.style.backgroundColor = '#107c10';
+            
+            setTimeout(() => {
+                elements.copyBodyBtn.textContent = originalText;
+                elements.copyBodyBtn.style.backgroundColor = '#0078d4';
+            }, 2000);
+            
+        } else {
+            // Fallback for older browsers
+            const textContent = elements.previewPane.textContent || elements.previewPane.innerText;
+            await navigator.clipboard.writeText(textContent);
+        }
+        
+    } catch (error) {
+        console.error('Error copying body:', error);
+        
+        // Manual copy fallback
+        try {
+            // Select the preview content for manual copying
+            const range = document.createRange();
+            range.selectNodeContents(elements.previewPane);
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+            
+            alert(`Unable to copy automatically. The email body is now selected.\n\nPlease press Ctrl+C to copy the selected content.`);
+            
+        } catch (selectError) {
+            console.error('Error selecting content:', selectError);
+            alert(`Please manually copy the content from the preview pane.`);
         }
     }
 }
