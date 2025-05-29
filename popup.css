@@ -8,7 +8,7 @@
 html, body {
     width: 450px;
     height: 600px;
-    font-family: 'Aptos', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-family: 'Roboto', 'Univers', 'Helvetica Neue', 'Arial', sans-serif;
     font-size: 14px;
     line-height: 1.4;
     color: #323130;
@@ -50,11 +50,20 @@ h1 {
     cursor: pointer;
     font-size: 14px;
     transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .refresh-btn:hover {
     background-color: #f3f2f1;
     border-color: #323130;
+}
+
+.refresh-icon {
+    width: 16px;
+    height: 16px;
+    display: block;
 }
 
 /* Section headers with copy buttons */
